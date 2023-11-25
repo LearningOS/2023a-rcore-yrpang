@@ -69,7 +69,7 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
-            syscall_counter: [0: 500],
+            syscall_counter: [0; 500],
             first_start_time: 0,
         };
         // prepare TrapContext in user space

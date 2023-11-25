@@ -24,6 +24,8 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
+pub use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
+
 use crate::timer::{get_time, get_time_us};
 
 /// The task manager, where all the tasks are managed.
@@ -184,6 +186,24 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].first_start_time
     }
+
+    /// map new page for current task
+    fn map_new_page(&self, _start: usize, _len: usize, _port: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let mm_set = &mut inner.tasks[current].memory_set;
+
+        mm_set.mm_map_page(_start, _len, _port)
+    }
+
+    /// umap page
+    fn umap_page(&self, _start: usize, _len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let mm_set = &mut inner.tasks[current].memory_set;
+        
+        mm_set.mm_umap_page(_start, _len)
+    }
 }
 
 /// Run the first task in task list.
@@ -246,4 +266,14 @@ pub fn get_counter() -> [u32; 500] {
 /// get first run time
 pub fn get_first_start_time() -> usize {
     TASK_MANAGER.get_first_start_time()
+}
+
+/// map new page
+pub fn map_new_page(_start: usize, _len: usize, _port: usize) ->isize {
+    TASK_MANAGER.map_new_page(_start, _len, _port)
+}
+
+/// umap page
+pub fn umap_page(_start: usize, _len: usize) -> isize {
+    TASK_MANAGER.umap_page(_start, _len)
 }

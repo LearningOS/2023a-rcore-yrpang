@@ -70,6 +70,78 @@ impl MemorySet {
         }
         self.areas.push(map_area);
     }
+
+    fn find_and_pop(&mut self, vpn: VirtPageNum) -> Option<MapArea>{
+        if let Some(index) = self.areas.iter().position(|area| area.vpn_range.get_start() <= vpn && area.vpn_range.get_end() > vpn) {
+            return Some(self.areas.remove(index));
+        } else {
+            return None;
+        }
+    }
+    /// umap page
+    pub fn mm_umap_page(&mut self, _start: usize, _len: usize) -> isize {
+        let start_va: VirtAddr = VirtAddr::from(_start);
+        let end_va: VirtAddr = VirtAddr::from(_start + _len);
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            match self.translate(vpn) {
+                Some(pte) => {
+                    if !pte.is_valid() {
+                        return -1;
+                    }
+                },
+                None => {}
+            }
+        }
+
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            match self.find_and_pop(vpn) {
+                Some(mut map_area) => {
+                    map_area.unmap_one(&mut (self.page_table), vpn);
+                    self.areas.push(map_area);
+                },
+                None => {
+                    return -1;
+                }
+            }
+        }
+        0
+    }
+
+    /// map page
+    pub fn mm_map_page(&mut self, _start: usize, _len: usize, _port: usize) -> isize {
+        let start_va: VirtAddr = VirtAddr::from(_start);
+        let end_va: VirtAddr = VirtAddr::from(_start + _len);
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            match self.translate(vpn) {
+                Some(pte) => {
+                    if pte.is_valid() {
+                        return -1;
+                    }
+                },
+                None => {}
+            }
+        }
+
+        let mut permission: MapPermission = MapPermission::U;
+        if _port & (1 << 0) != 0 {
+            permission = permission | MapPermission::R;
+        }
+        if _port & (1 << 1) != 0 {
+            permission = permission | MapPermission::W;
+        }
+        if _port & (1 << 2) != 0 {
+            permission = permission | MapPermission::X;
+        }
+
+        self.insert_framed_area(start_va, end_va, permission);
+        0
+    }
+
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
         self.page_table.map(
