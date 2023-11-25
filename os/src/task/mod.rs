@@ -24,6 +24,8 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
+use crate::timer::{get_time, get_time_us};
+
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -77,9 +79,12 @@ impl TaskManager {
     /// But in ch4, we load apps statically, so the first task is a real app.
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
-        let next_task = &mut inner.tasks[0];
-        next_task.task_status = TaskStatus::Running;
-        let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
+        let task0 = &mut inner.tasks[0];
+        if task0.first_start_time == 0 {
+            task0.first_start_time = get_time_us();
+        }
+        task0.task_status = TaskStatus::Running;
+        let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -139,7 +144,11 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
-            inner.tasks[next].task_status = TaskStatus::Running;
+            let next_task = &mut inner.tasks[next];
+            if next_task.first_start_time == 0 {
+                next_task.first_start_time = get_time_us();
+            }
+            next_task.task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -152,6 +161,28 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    /// add syscall counter
+    fn add_counter(&self, syscall_id: usize) {
+        trace!("sdsds");
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_counter[syscall_id] += 1;
+    }
+
+    /// get syscall counter
+    fn get_counter(&self) -> [u32; 500] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_counter
+    }
+
+    /// get first start time
+    fn get_first_start_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].first_start_time
     }
 }
 
@@ -201,4 +232,18 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+/// add syscall counter
+pub fn add_counter(syscall_id: usize) {
+    TASK_MANAGER.add_counter(syscall_id);
+}
+
+/// get syacall counter
+pub fn get_counter() -> [u32; 500] {
+    TASK_MANAGER.get_counter()
+}
+
+/// get first run time
+pub fn get_first_start_time() -> usize {
+    TASK_MANAGER.get_first_start_time()
 }
